@@ -1,3 +1,6 @@
+name := "DSparK"
+description := "A kmer counting program, using Spark"
+
 lazy val root = (project in file(".")) // your project
   .settings ( // Definition of your project
   inThisBuild( List(
