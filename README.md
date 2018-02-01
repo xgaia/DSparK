@@ -13,13 +13,13 @@ cd DSparK
 
 ## Package
 ```bash
-sbt package
+sbt assembly
 ```
 
 ## Usage
 
 ```bash
-spark-submit --master yarn --deploy-mode cluster --num-executor <exec_num> --executor-memory <exec_memory> target/scala-2.11/dspark_2.11-0.1.jar --input <input> --output <output>
+spark-submit --master yarn --deploy-mode cluster --num-executor <exec_num> --executor-memory <exec_memory> target/scala-2.11/DSparK-assembly-0.1.jar --input <input> --output <output>
 ```
 
 With:
