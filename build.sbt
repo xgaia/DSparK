@@ -1,16 +1,34 @@
-name := "DSparK"
-description := "A kmer counting program, using Spark"
+lazy val scalautils = RootProject(uri("https://lipm-gitlab.toulouse.inra.fr/llegrand/scala-utils.git"))
 
-lazy val root = (project in file(".")) // your project
-  .settings ( // Definition of your project
-  inThisBuild( List(
-    organization := "fr.inra.lipm",
-    scalaVersion := "2.11.6", // As scala-utils IS 2.11.6. Note: going to 2.11.8 ?
-    version := "0.1"
-  )),
-  //libraryDependencies := scalaTest % Test
-  libraryDependencies += "org.apache.spark" %% "spark-core" % "2.1.0"
-)
-  .dependsOn( scalautils ) // Depends of the Project which is from scala-utils git
-lazy val scalautils = RootProject ( uri( "https://lipm-gitlab.toulouse.inra.fr/llegrand/scala-utils.git" ) )
+lazy val DSparK = (project in file("."))
+  .settings(
+    inThisBuild(List(
+      organization := "com.example",
+      scalaVersion := "2.11.6",
+      version := "0.1"
+    )
+  ), name := "DSparK",
+     description := "A kmer counting program, using Spark",
+     libraryDependencies += "org.apache.spark" %% "spark-core" % "2.1.0"
+).dependsOn(scalautils)
 
+assemblyMergeStrategy in assembly := {
+  case PathList("org","aopalliance", xs @ _*) => MergeStrategy.last
+  case PathList("javax", "inject", xs @ _*) => MergeStrategy.last
+  case PathList("javax", "servlet", xs @ _*) => MergeStrategy.last
+  case PathList("javax", "activation", xs @ _*) => MergeStrategy.last
+  case PathList("org", "apache", xs @ _*) => MergeStrategy.last
+  case PathList("com", "google", xs @ _*) => MergeStrategy.last
+  case PathList("com", "esotericsoftware", xs @ _*) => MergeStrategy.last
+  case PathList("com", "codahale", xs @ _*) => MergeStrategy.last
+  case PathList("com", "yammer", xs @ _*) => MergeStrategy.last
+  case "about.html" => MergeStrategy.rename
+  case "META-INF/ECLIPSEF.RSA" => MergeStrategy.last
+  case "META-INF/mailcap" => MergeStrategy.last
+  case "META-INF/mimetypes.default" => MergeStrategy.last
+  case "plugin.properties" => MergeStrategy.last
+  case "log4j.properties" => MergeStrategy.last
+  case x =>
+    val oldStrategy = (assemblyMergeStrategy in assembly).value
+    oldStrategy(x)
+}
