@@ -43,7 +43,7 @@ object Dspark extends App {
   // main
   val tryLines = sc.textFile(input)
 
-  val lines = Try (tryLines.first) match {
+  val lines = Try(tryLines.first) match {
     case Success(x) => tryLines
     case Failure(x) => sc.textFile(s"$input/*/*")
   }
@@ -75,7 +75,7 @@ object Dspark extends App {
 
   def isCanonical(kmer:String):Boolean = {
     val len = kmer.length
-    val start = kmer.substring(0,1)
+    val start = kmer.substring(0, 1)
     val reversedEnd = broadcastedBaseComplement.value(kmer.substring(len - 1, len))
 
     if (len <= 3) true
@@ -99,9 +99,9 @@ object Dspark extends App {
   }
 
   def getCanonical(kmer:String):String = {
-    if (isCanonical(kmer)){
+    if (isCanonical(kmer)) {
       kmer
-    }else{
+    } else {
       revComp(kmer)
     }
   }
@@ -112,7 +112,7 @@ object Dspark extends App {
   val countedKmers = canonicalKmers.map((_, 1)).reduceByKey(_ + _)
 
   // filter on abundance
-  val filteredKmers = countedKmers.filter(kmer_tpl => kmer_tpl._2 >= broadcastedAbundanceMin.value || kmer_tpl._2 <= broadcastedAbundanceMax.value)
+  val filteredKmers = countedKmers.filter(kmer_tpl => kmer_tpl._2 >= broadcastedAbundanceMin.value && kmer_tpl._2 <= broadcastedAbundanceMax.value)
 
   filteredKmers.saveAsTextFile(output)
 }
