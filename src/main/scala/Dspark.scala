@@ -21,6 +21,8 @@ object Dspark {
     parser.addParamLong("kmer-size", 'k', "Kmer Size", 31)
     parser.addParamLong("abundance-max", 'x', "Maximum abundance", 2147483647)
     parser.addParamLong("abundance-min", 'n', "Minimum abundance", 2)
+    parser.addParamCounter("sorted", 's')
+    parser.addParamCounter("format", 'f')
 
     parser.parse(args)
 
@@ -32,6 +34,8 @@ object Dspark {
     val kmerSize = parser.getLong("kmer-size").toInt
     val abundanceMax = parser.getLong("abundance-max")
     val abundanceMin = parser.getLong("abundance-min")
+    val sorted = parser.getCounter("sorted")
+    val format = parser.getCounter("format")
 
     val sortOrder = Map("A" -> 0, "C" -> 1, "T" -> 2, "G" -> 3)
     val baseComplement = Map("A" -> "T", "C" -> "G", "G" -> "C", "T" -> "A")
@@ -123,6 +127,18 @@ object Dspark {
     // filter on abundance
     val filteredKmers = countedKmers.filter(kmer_tpl => kmer_tpl._2 >= broadcastedAbundanceMin.value && kmer_tpl._2 <= broadcastedAbundanceMax.value)
 
-    filteredKmers.saveAsTextFile(output)
+    // Sort
+    val sortedKmers = sorted match {
+      case 0 => filteredKmers
+      case _ => filteredKmers.sortByKey()
+    }
+
+    // format
+    val formatedKmers = format match {
+      case 0 => sortedKmers
+      case _ => sortedKmers.map(x => x.toString().replace("(", "").replace(")", "").replace(",", " "))
+    }
+
+    formatedKmers.saveAsTextFile(output)
   }
 }
