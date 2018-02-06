@@ -1,6 +1,9 @@
+import java.util
+
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
-import scala.util.{Try, Success, Failure}
+
+import scala.util.{Failure, Success, Try}
 import fr.inra.lipm.general.paramparser.ArgParser
 
 
@@ -21,9 +24,8 @@ object Dspark {
 
     parser.parse(args)
 
-    parser.assertPathIsFile("input")
-    //TODO: assert output don't exist
-    //TODO: assert ksize is odd
+    // TODO: assertion (don't work well in Spark, filesystem are different)
+    //parser.assertPathIsFile("input")
 
     val input = parser.getString("input")
     val output = parser.getString("output")
@@ -63,51 +65,57 @@ object Dspark {
     val reads = lines.filter(line => {
       !(
         line.startsWith("@") ||
-          line.startsWith("+") ||
-          line.startsWith(";") ||
-          line.startsWith("!") ||
-          line.startsWith("~") ||
-          line.startsWith(">")
+        line.startsWith("+") ||
+        line.startsWith(";") ||
+        line.startsWith("!") ||
+        line.startsWith("~") ||
+        line.startsWith(">")
         )
     })
 
     val kmers = reads.flatMap(read => read.sliding(kmerSize, 1))
     val kmersWithoutN = kmers.filter(kmer => !kmer.contains("N"))
 
-    def isCanonical(kmer: String): Boolean = {
-      val len = kmer.length
-      val start = kmer.substring(0, 1)
-      val reversedEnd = broadcastedBaseComplement.value(kmer.substring(len - 1, len))
+    def getCanonicalIterator(iterKmer: Iterator[String]): Iterator[String] = {
 
-      if (len <= 3) true
+      def isCanonical(kmer: String): Boolean = {
+        val len = kmer.length
+        val start = kmer.substring(0, 1)
+        val reversedEnd = broadcastedBaseComplement.value(kmer.substring(len - 1, len))
 
-      val subtraction = broadcastedSortOrder.value(reversedEnd) - broadcastedSortOrder.value(start)
+        if (len <= 3) true
 
-      subtraction match {
-        case a if a > 0 => true
-        case a if a < 0 => false
-        case 0 => isCanonical(kmer.substring(1).dropRight(1))
+        val subtraction = broadcastedSortOrder.value(reversedEnd) - broadcastedSortOrder.value(start)
+
+        subtraction match {
+          case a if a > 0 => true
+          case a if a < 0 => false
+          case 0 => isCanonical(kmer.substring(1).dropRight(1))
+        }
       }
-    }
 
-    def revComp(kmer: String): String = {
-      kmer.map {
-        case 'A' => 'T'
-        case 'C' => 'G'
-        case 'G' => 'C'
-        case 'T' => 'A'
-      }.reverse
-    }
-
-    def getCanonical(kmer: String): String = {
-      if (isCanonical(kmer)) {
-        kmer
-      } else {
-        revComp(kmer)
+      def revComp(kmer: String): String = {
+        kmer.map {
+          case 'A' => 'T'
+          case 'C' => 'G'
+          case 'G' => 'C'
+          case 'T' => 'A'
+        }.reverse
       }
+
+      def getCanonical(kmer: String): String = {
+        if (isCanonical(kmer)) {
+          kmer
+        } else {
+          revComp(kmer)
+        }
+      }
+
+      iterKmer.map(getCanonical)
+
     }
 
-    val canonicalKmers = kmersWithoutN.map(getCanonical)
+    val canonicalKmers = kmersWithoutN.mapPartitions(getCanonicalIterator)
 
     // count kmers
     val countedKmers = canonicalKmers.map((_, 1)).reduceByKey(_ + _)
