@@ -1,7 +1,7 @@
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
-
-import scala.util.{Failure, Success, Try}
+import org.apache.spark.mllib.rdd.RDDFunctions._
+//import scala.util.{Failure, Success, Try}
 import fr.inra.lipm.general.paramparser.ArgParser
 
 
@@ -15,6 +15,7 @@ object Dspark {
     // Param parser
     val parser = new ArgParser()
     parser.addParamString("input", 'i', "Input files or directory")
+    parser.addParamString("input-type", 't', "Input type")
     parser.addParamString("output", 'o', "Output directory")
     parser.addParamLong("kmer-size", 'k', "Kmer Size", 31)
     parser.addParamLong("abundance-max", 'x', "Maximum abundance", 2147483647)
@@ -25,9 +26,11 @@ object Dspark {
     parser.parse(args)
 
     // TODO: assertion (don't work well in Spark, filesystem are different)
+    parser.assertAllowedValue("input-type", Array("fasta", "fastq"))
     //parser.assertPathIsFile("input")
 
     val input = parser.getString("input")
+    val inputType = parser.getString("input-type")
     val output = parser.getString("output")
     val kmerSize = parser.getLong("kmer-size").toInt
     val abundanceMax = parser.getLong("abundance-max")
@@ -45,35 +48,11 @@ object Dspark {
     val broadcastedSortOrder = sc.broadcast(sortOrder)
     val broadcastedBaseComplement = sc.broadcast(baseComplement)
 
-    // main
-    val tryLines = sc.textFile(input)
-
-    val lines = Try(tryLines.first) match {
-      case Success(x) => tryLines
-      case Failure(x) => sc.textFile(s"$input/*/*")
+    // main --------------------------
+    val reads = inputType match {
+      case "fasta" => sc.textFile(input).sliding(2, 2).map{case Array(id, seq) => seq}
+      case "fastq" => sc.textFile(input).sliding(4, 4).map{case Array(id, seq, _, qual) => seq}
     }
-
-    // Remove quality lines if input are fastq
-    val firstLine = lines.first()
-    val linesWithoutQuality = firstLine.startsWith("@") match {
-      case true => {
-        val indexedLines = lines.zipWithIndex()
-        val indexedLinesWithoutQuality = indexedLines.filter(tpl => (tpl._2 + 1) % 4 != 0)
-        indexedLinesWithoutQuality.map(tpl => tpl._1)
-      }
-      case false => lines
-    }
-
-    val reads = lines.filter(line => {
-      !(
-        line.startsWith("@") ||
-        line.startsWith("+") ||
-        line.startsWith(";") ||
-        line.startsWith("!") ||
-        line.startsWith("~") ||
-        line.startsWith(">")
-        )
-    })
 
     val kmers = reads.flatMap(read => read.sliding(kmerSize, 1))
     val kmersWithoutN = kmers.filter(kmer => !kmer.contains("N"))
