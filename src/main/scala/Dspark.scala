@@ -38,8 +38,8 @@ object Dspark {
     val sorted = parser.getCounter("sorted")
     val format = parser.getCounter("format")
 
-    val sortOrder = Map("A" -> 0, "C" -> 1, "T" -> 2, "G" -> 3)
-    val baseComplement = Map("A" -> "T", "C" -> "G", "G" -> "C", "T" -> "A")
+    val sortOrder = Map('A' -> 0, 'C' -> 1, 'T' -> 2, 'G' -> 3)
+    val baseComplement = Map('A' -> 'T', 'C' -> 'G', 'G' -> 'C', 'T' -> 'A')
 
     //Broadcast variables on all nodes
     val broadcastedKmerSize = sc.broadcast(kmerSize)
@@ -61,8 +61,8 @@ object Dspark {
 
       def isCanonical(kmer: String): Boolean = {
         val len = kmer.length
-        val start = kmer.substring(0, 1)
-        val reversedEnd = broadcastedBaseComplement.value(kmer.substring(len - 1, len))
+        val start = kmer.head
+        val reversedEnd = broadcastedBaseComplement.value(kmer.charAt(len - 1))
 
         if (len <= 3) true
 
@@ -73,6 +73,10 @@ object Dspark {
           case a if a < 0 => false
           case 0 => isCanonical(kmer.substring(1).dropRight(1))
         }
+      }
+
+      def revComp2(kmer: String): String = {
+        kmer.map(broadcastedBaseComplement.value(_)).reverse
       }
 
       def revComp(kmer: String): String = {
@@ -88,7 +92,7 @@ object Dspark {
         if (isCanonical(kmer)) {
           kmer
         } else {
-          revComp(kmer)
+          revComp2(kmer)
         }
       }
 
