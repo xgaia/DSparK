@@ -17,9 +17,9 @@ object Dspark {
     parser.addParamString("input", 'i', "Input files or directory")
     parser.addParamString("input-type", 't', "Input type")
     parser.addParamString("output", 'o', "Output directory")
-    parser.addParamLong("kmer-size", 'k', "Kmer Size", 31)
-    parser.addParamLong("abundance-max", 'x', "Maximum abundance", 2147483647)
-    parser.addParamLong("abundance-min", 'n', "Minimum abundance", 2)
+    parser.addParamLong("kmer-size", 'k', "Kmer Size", Some(31))
+    parser.addParamLong("abundance-max", 'x', "Maximum abundance", Some(2147483647))
+    parser.addParamLong("abundance-min", 'n', "Minimum abundance", Some(2))
     parser.addParamCounter("sorted", 's')
     parser.addParamCounter("format", 'f')
 
@@ -75,24 +75,15 @@ object Dspark {
         }
       }
 
-      def revComp2(kmer: String): String = {
-        kmer.map(broadcastedBaseComplement.value(_)).reverse
-      }
-
       def revComp(kmer: String): String = {
-        kmer.map {
-          case 'A' => 'T'
-          case 'C' => 'G'
-          case 'G' => 'C'
-          case 'T' => 'A'
-        }.reverse
+        kmer.map(broadcastedBaseComplement.value(_)).reverse
       }
 
       def getCanonical(kmer: String): String = {
         if (isCanonical(kmer)) {
           kmer
         } else {
-          revComp2(kmer)
+          revComp(kmer)
         }
       }
 
