@@ -43,6 +43,7 @@ object Dspark {
 
     //Broadcast variables on all nodes
     val broadcastedKmerSize = sc.broadcast(kmerSize)
+    val broadcastedHalphKmerSize = sc.broadcast((kmerSize / 2 ) + 1)
     val broadcastedAbundanceMax = sc.broadcast(abundanceMax)
     val broadcastedAbundanceMin = sc.broadcast(abundanceMin)
     val broadcastedSortOrder = sc.broadcast(sortOrder)
@@ -59,31 +60,27 @@ object Dspark {
 
     def getCanonicalIterator(iterKmer: Iterator[String]): Iterator[String] = {
 
-      def isCanonical(kmer: String): Boolean = {
-        val len = kmer.length
-        val start = kmer.head
-        val reversedEnd = broadcastedBaseComplement.value(kmer.charAt(len - 1))
+      def isCanonicalImproved(kmer: String, reverseKmer: String): Boolean = {
+        //TODO: test with or without this
+        if (kmer.length <= 3) true
 
-        if (len <= 3) true
+        val sub = broadcastedSortOrder.value(broadcastedBaseComplement.value(reverseKmer.head)) - broadcastedSortOrder.value(kmer.head)
 
-        val subtraction = broadcastedSortOrder.value(reversedEnd) - broadcastedSortOrder.value(start)
-
-        subtraction match {
+        sub match {
+          case 0 => isCanonicalImproved(kmer.tail, reverseKmer.tail)
           case a if a > 0 => true
           case a if a < 0 => false
-          case 0 => isCanonical(kmer.substring(1).dropRight(1))
         }
       }
 
-      def revComp(kmer: String): String = {
-        kmer.map(broadcastedBaseComplement.value(_)).reverse
-      }
-
       def getCanonical(kmer: String): String = {
-        if (isCanonical(kmer)) {
+        // reverse seq
+        val revKmer = kmer.reverse
+        if (isCanonicalImproved(kmer, revKmer)) {
           kmer
         } else {
-          revComp(kmer)
+          // complement
+          revKmer.map(broadcastedBaseComplement.value(_))
         }
       }
 
