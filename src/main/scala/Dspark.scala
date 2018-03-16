@@ -61,8 +61,6 @@ object Dspark {
     def getCanonicalIterator(iterKmer: Iterator[String]): Iterator[String] = {
 
       def isCanonicalImproved(kmer: String, reverseKmer: String): Boolean = {
-        //TODO: test with or without this
-        if (kmer.length <= 3) true
 
         val sub = broadcastedSortOrder.value(broadcastedBaseComplement.value(reverseKmer.head)) - broadcastedSortOrder.value(kmer.head)
 
