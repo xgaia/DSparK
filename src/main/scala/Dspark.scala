@@ -60,12 +60,12 @@ object Dspark {
 
     def getCanonicalIterator(iterKmer: Iterator[String]): Iterator[String] = {
 
-      def isCanonicalImproved(kmer: String, reverseKmer: String): Boolean = {
+      def isCanonical(kmer: String, reverseKmer: String): Boolean = {
 
         val sub = broadcastedSortOrder.value(broadcastedBaseComplement.value(reverseKmer.head)) - broadcastedSortOrder.value(kmer.head)
 
         sub match {
-          case 0 => isCanonicalImproved(kmer.tail, reverseKmer.tail)
+          case 0 => isCanonical(kmer.tail, reverseKmer.tail)
           case a if a > 0 => true
           case a if a < 0 => false
         }
@@ -74,7 +74,7 @@ object Dspark {
       def getCanonical(kmer: String): String = {
         // reverse seq
         val revKmer = kmer.reverse
-        if (isCanonicalImproved(kmer, revKmer)) {
+        if (isCanonical(kmer, revKmer)) {
           kmer
         } else {
           // complement
