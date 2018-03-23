@@ -3,6 +3,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.mllib.rdd.RDDFunctions._
 //import scala.util.{Failure, Success, Try}
 import fr.inra.lipm.general.paramparser.ArgParser
+import scala.collection.immutable.BitSet
 
 
 object Dspark {
@@ -55,57 +56,129 @@ object Dspark {
       case "fastq" => sc.textFile(input).sliding(4, 4).map{case Array(id, seq, _, qual) => seq}
     }
 
-    val kmers = reads.flatMap(read => read.sliding(kmerSize, 1))
-    val kmersWithoutN = kmers.filter(kmer => !kmer.contains("N"))
+    def readToBinaryKmersIterator(iterReads: Iterator[String]): Iterator[BitSet] = {
 
-    def getCanonicalIterator(iterKmer: Iterator[String]): Iterator[String] = {
+      def sequenceToBinaryCanonicalKmers(sequence: String): Array[BitSet] = {
+        // Build the first kmer
+        val firstStringKmer = sequence.take(broadcastedKmerSize.value)
+        val firstBinaryKmerTuple = kmerToBitsetTuple(firstStringKmer, firstStringKmer.reverse, (BitSet(), BitSet()))
+        // Send the rest of the sequence to the extends fonction
+        val restOfSequence = sequence.takeRight(sequence.length - broadcastedKmerSize.value)
+        val arrayOfKmersBinaryTuple = extendsArrayOfKmersTuple(restOfSequence, Array(firstBinaryKmerTuple))
+        // return the canonical kmers
+        arrayOfKmersBinaryTuple.map(getCanonical)
+      }
 
-      def isCanonical(kmer: String, reverseKmer: String): Boolean = {
-
-        val sub = broadcastedSortOrder.value(broadcastedBaseComplement.value(reverseKmer.head)) - broadcastedSortOrder.value(kmer.head)
-
-        sub match {
-          case 0 => isCanonical(kmer.tail, reverseKmer.tail)
-          case a if a > 0 => true
-          case a if a < 0 => false
+      def kmerToBitsetTuple(kmer: String, revKmer: String, bitsetTuple: (BitSet, BitSet)): (BitSet, BitSet) = {
+        val kmerLen = kmer.length
+        if (kmerLen == 0) {
+          bitsetTuple
+        }else{
+          val index = broadcastedKmerSize.value - kmerLen
+          val forwardKmerBitset = kmer.head match {
+            case 'C' => bitsetTuple._1 + (index * 2 + 1)
+            case 'T' => bitsetTuple._1 + (index * 2)
+            case 'G' => bitsetTuple._1 + (index * 2) + (index * 2 + 1)
+            case _ => bitsetTuple._1
+          }
+          val reverseKmerBitset = revKmer.head match {
+            case 'G' => bitsetTuple._2 + (index * 2 + 1)
+            case 'A' => bitsetTuple._2 + (index * 2)
+            case 'C' => bitsetTuple._2 + (index * 2) + (index * 2 + 1)
+            case _ => bitsetTuple._2
+          }
+          kmerToBitsetTuple(kmer.tail, revKmer.tail, (forwardKmerBitset, reverseKmerBitset))
         }
       }
 
-      def getCanonical(kmer: String): String = {
-        // reverse seq
-        val revKmer = kmer.reverse
-        if (isCanonical(kmer, revKmer)) {
-          kmer
-        } else {
-          // complement
-          revKmer.map(broadcastedBaseComplement.value(_))
+      def extendsArrayOfKmersTuple(restOfStringSequence:String, arrayOfBinaryKmersTuple: Array[(BitSet, BitSet)]): Array[(BitSet, BitSet)] = {
+        val lenOfRest = restOfStringSequence.length
+        val ksizeMinusOne = broadcastedKmerSize.value - 1
+        if (lenOfRest == 0) {
+          arrayOfBinaryKmersTuple
+        }else {
+          val head = restOfStringSequence.head
+          val tail = restOfStringSequence.tail
+          // shift the forward kmer (remove 0 and 1, and subtract 2 of all value)
+          val shiftedForward = arrayOfBinaryKmersTuple.last._1.-(0).-(1).map(_ - 2)
+          // shift the reverse kmer (remove the last bit)
+          val shiftedReverse = arrayOfBinaryKmersTuple.last._2.-(ksizeMinusOne * 2).-(ksizeMinusOne * 2 + 1).map(_ + 2)
+          // insert the new nucl at the end of the forward strand
+          val newForward = head match {
+            case 'C' => shiftedForward + (ksizeMinusOne * 2 + 1)
+            case 'T' => shiftedForward + (ksizeMinusOne * 2)
+            case 'G' => shiftedForward + (ksizeMinusOne * 2) + (ksizeMinusOne * 2 + 1)
+            case _ => shiftedForward // A
+          }
+          // insert the compl nucl at the begining of the reverse strand
+          val newReverse = head match {
+            case 'G' => shiftedReverse + 1     // C
+            case 'A' => shiftedReverse + 0     // T
+            case 'C' => shiftedReverse + 0 + 1 // G
+            case _ => shiftedReverse           // A
+          }
+          extendsArrayOfKmersTuple(tail, arrayOfBinaryKmersTuple :+ (newForward, newReverse))
         }
       }
 
-      iterKmer.map(getCanonical)
+      def getCanonical(bitsetTuple: (BitSet, BitSet)): BitSet = {
+        (bitsetTuple._1.isEmpty, bitsetTuple._2.isEmpty) match {
+          case (false, false) => {
+            if ((bitsetTuple._1 &~ bitsetTuple._2).min > (bitsetTuple._2 &~ bitsetTuple._1).min) {
+              bitsetTuple._1
+            }else{
+              bitsetTuple._2
+            }
+          }
+          case (true, false) => bitsetTuple._1
+          case _ => bitsetTuple._2
+        }
+      }
 
+      iterReads.flatMap(sequenceToBinaryCanonicalKmers)
     }
 
-    val canonicalKmers = kmersWithoutN.mapPartitions(getCanonicalIterator)
+    def bitsetToKmer(binaryKmer: BitSet, kmer: String): String = {
+      val kmerLen = kmer.length
+      if (kmerLen == broadcastedKmerSize.value) {
+        kmer
+      }else{
+        val index = kmerLen
+        val bitPosOne = binaryKmer.contains(index * 2)
+        val bitPosTwo = binaryKmer.contains(index * 2 + 1)
 
-    // count kmers
-    val countedKmers = canonicalKmers.map((_, 1)).reduceByKey(_ + _)
+        val bitTuple = (bitPosOne, bitPosTwo)
 
-    // filter on abundance
-    val filteredKmers = countedKmers.filter(kmer_tpl => kmer_tpl._2 >= broadcastedAbundanceMin.value && kmer_tpl._2 <= broadcastedAbundanceMax.value)
+        val newNucl = bitTuple match{
+          case (true, true) => 'G'
+          case (true, false) => 'T'
+          case (false, true) => 'C'
+          case _ => 'A'
+        }
 
-    // Sort
-    val sortedKmers = sorted match {
-      case 0 => filteredKmers
-      case _ => filteredKmers.sortByKey()
+        val newBitset = binaryKmer - (index * 2) - (index * 2 + 1)
+        val extendedKmer = kmer + newNucl
+
+        bitsetToKmer(newBitset, extendedKmer)
+      }
     }
 
-    // format
-    val formatedKmers = format match {
-      case 0 => sortedKmers
-      case _ => sortedKmers.map(x => x.toString().replace("(", "").replace(")", "").replace(",", " "))
-    }
 
-    formatedKmers.saveAsTextFile(output)
+
+    // Convert reads to binary canonical kmers
+    val binaryKmers = reads.mapPartitions(readToBinaryKmersIterator)
+
+    // Convert kmer to (kmer, 1)
+    val binaryKmersTuple = binaryKmers.map((_, 1))
+
+    // Count
+    val countedBinaryKmers = binaryKmersTuple.reduceByKey(_ + _)
+
+    // Convert binary Kmers to String
+    val countedStringKmers = countedBinaryKmers.map(tpl => (bitsetToKmer(tpl._1, ""), tpl._2))
+
+    println(countedStringKmers.take(5).toList)
+
+
   }
 }
