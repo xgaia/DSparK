@@ -22,12 +22,13 @@ object Dspark {
     parser.addParamLong("abundance-max", 'x', "Maximum abundance", Some(2147483647))
     parser.addParamLong("abundance-min", 'n', "Minimum abundance", Some(2))
     parser.addParamCounter("sorted", 's')
-    parser.addParamCounter("format", 'f')
+    parser.addParamString("format", 'f', "Output format", Some("binary"))
 
     parser.parse(args)
 
-    // TODO: assertion (don't work well in Spark, filesystem are different)
     parser.assertAllowedValue("input-type", Array("fasta", "fastq"))
+    parser.assertAllowedValue("format", Array("binary", "text"))
+    // TODO: assertion (don't work well in Spark, filesystem are different)
     //parser.assertPathIsFile("input")
 
     val input = parser.getString("input")
@@ -37,7 +38,7 @@ object Dspark {
     val abundanceMax = parser.getLong("abundance-max")
     val abundanceMin = parser.getLong("abundance-min")
     val sorted = parser.getCounter("sorted")
-    val format = parser.getCounter("format")
+    val format = parser.getString("format")
 
     val sortOrder = Map('A' -> 0, 'C' -> 1, 'T' -> 2, 'G' -> 3)
     val baseComplement = Map('A' -> 'T', 'C' -> 'G', 'G' -> 'C', 'T' -> 'A')
@@ -56,9 +57,9 @@ object Dspark {
       case "fastq" => sc.textFile(input).sliding(4, 4).map{case Array(id, seq, _, qual) => seq}
     }
 
-    def readToBinaryKmersIterator(iterReads: Iterator[String]): Iterator[BitSet] = {
+    def readToBinaryKmersIterator(iterReads: Iterator[String]): Iterator[(BitSet, Int)] = {
 
-      def sequenceToBinaryCanonicalKmers(sequence: String): Array[BitSet] = {
+      def sequenceToBinaryCanonicalKmers(sequence: String): Array[(BitSet, Int)] = {
         // Build the first kmer
         val firstStringKmer = sequence.take(broadcastedKmerSize.value)
         val firstBinaryKmerTuple = kmerToBitsetTuple(firstStringKmer, firstStringKmer.reverse, (BitSet(), BitSet()))
@@ -66,7 +67,7 @@ object Dspark {
         val restOfSequence = sequence.takeRight(sequence.length - broadcastedKmerSize.value)
         val arrayOfKmersBinaryTuple = extendsArrayOfKmersTuple(restOfSequence, Array(firstBinaryKmerTuple))
         // return the canonical kmers
-        arrayOfKmersBinaryTuple.map(getCanonical)
+        arrayOfKmersBinaryTuple.map(getCanonicalWithOne)
       }
 
       def kmerToBitsetTuple(kmer: String, revKmer: String, bitsetTuple: (BitSet, BitSet)): (BitSet, BitSet) = {
@@ -121,23 +122,24 @@ object Dspark {
         }
       }
 
-      def getCanonical(bitsetTuple: (BitSet, BitSet)): BitSet = {
+      def getCanonicalWithOne(bitsetTuple: (BitSet, BitSet)): (BitSet, Int) = {
         (bitsetTuple._1.isEmpty, bitsetTuple._2.isEmpty) match {
           case (false, false) => {
             if ((bitsetTuple._1 &~ bitsetTuple._2).min > (bitsetTuple._2 &~ bitsetTuple._1).min) {
-              bitsetTuple._1
+              (bitsetTuple._1, 1)
             }else{
-              bitsetTuple._2
+              (bitsetTuple._2, 1)
             }
           }
-          case (true, false) => bitsetTuple._1
-          case _ => bitsetTuple._2
+          case (true, false) => (bitsetTuple._1, 1)
+          case _ => (bitsetTuple._2, 1)
         }
       }
 
       iterReads.flatMap(sequenceToBinaryCanonicalKmers)
     }
 
+    // Bitset Conversion   ----------------------------------------
     def bitsetToKmer(binaryKmer: BitSet, kmer: String): String = {
       val kmerLen = kmer.length
       if (kmerLen == broadcastedKmerSize.value) {
@@ -163,22 +165,34 @@ object Dspark {
       }
     }
 
+    def bitsetToBinaryString(bitset: BitSet): String = {
+      bitset.toBitMask.map(_.toChar).mkString
+    }
+    // -------------------------------------------------------------------------
 
-
-    // Convert reads to binary canonical kmers
+    // Convert reads to binary canonical kmers tuple => (BinaryCanonicalKmer, 1)
     val binaryKmers = reads.mapPartitions(readToBinaryKmersIterator)
 
-    // Convert kmer to (kmer, 1)
-    val binaryKmersTuple = binaryKmers.map((_, 1))
+    // Count kmer
+    val countedBinaryKmers = binaryKmers.reduceByKey(_ + _)
 
-    // Count
-    val countedBinaryKmers = binaryKmersTuple.reduceByKey(_ + _)
+    // filter on abundance
+    val filteredBinaryKmers = countedBinaryKmers.filter(kmer_tpl => kmer_tpl._2 >= broadcastedAbundanceMin.value && kmer_tpl._2 <= broadcastedAbundanceMax.value)
 
-    // Convert binary Kmers to String
-    val countedStringKmers = countedBinaryKmers.map(tpl => (bitsetToKmer(tpl._1, ""), tpl._2))
+    // ascii or binary output
+    val formatedOutput = format match {
+      case "binary" => filteredBinaryKmers.map(tpl => (bitsetToBinaryString(tpl._1), tpl._2))
+      case "text" => {
+        // sort ?
+        if (sorted != 0){
+          filteredBinaryKmers.map(tpl => (bitsetToKmer(tpl._1, ""), tpl._2)).sortByKey()
+        }else {
+          filteredBinaryKmers.map(tpl => (bitsetToKmer(tpl._1, ""), tpl._2))
+        }
+      }
+    }
 
-    println(countedStringKmers.take(5).toList)
-
-
+    // Save results
+    formatedOutput.saveAsTextFile(output)
   }
 }
