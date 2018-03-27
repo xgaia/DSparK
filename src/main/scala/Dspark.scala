@@ -40,16 +40,16 @@ object Dspark {
     val sorted = parser.getCounter("sorted")
     val format = parser.getString("format")
 
-    val sortOrder = Map('A' -> 0, 'C' -> 1, 'T' -> 2, 'G' -> 3)
-    val baseComplement = Map('A' -> 'T', 'C' -> 'G', 'G' -> 'C', 'T' -> 'A')
+    val nuclMapForward = Map('A' -> BitSet(), 'T' -> BitSet(0), 'G' -> BitSet(0, 1), 'C' -> BitSet(1))
+    val nuclMapReverse = Map('T' -> BitSet(), 'A' -> BitSet(0), 'C' -> BitSet(0, 1), 'G' -> BitSet(1))
 
     //Broadcast variables on all nodes
     val broadcastedKmerSize = sc.broadcast(kmerSize)
     val broadcastedHalphKmerSize = sc.broadcast((kmerSize / 2 ) + 1)
     val broadcastedAbundanceMax = sc.broadcast(abundanceMax)
     val broadcastedAbundanceMin = sc.broadcast(abundanceMin)
-    val broadcastedSortOrder = sc.broadcast(sortOrder)
-    val broadcastedBaseComplement = sc.broadcast(baseComplement)
+    val broadcastedNuclMapForward = sc.broadcast(nuclMapForward)
+    val broadcastedNuclMapReverse = sc.broadcast(nuclMapReverse)
 
     // main --------------------------
     val reads = inputType match {
@@ -75,26 +75,16 @@ object Dspark {
         if (kmerLen == 0) {
           bitsetTuple
         }else{
-          val index = broadcastedKmerSize.value - kmerLen
-          val forwardKmerBitset = kmer.head match {
-            case 'C' => bitsetTuple._1 + (index * 2 + 1)
-            case 'T' => bitsetTuple._1 + (index * 2)
-            case 'G' => bitsetTuple._1 + (index * 2) + (index * 2 + 1)
-            case _ => bitsetTuple._1
-          }
-          val reverseKmerBitset = revKmer.head match {
-            case 'G' => bitsetTuple._2 + (index * 2 + 1)
-            case 'A' => bitsetTuple._2 + (index * 2)
-            case 'C' => bitsetTuple._2 + (index * 2) + (index * 2 + 1)
-            case _ => bitsetTuple._2
-          }
+          val bitPosition = (broadcastedKmerSize.value - kmerLen) * 2
+          val forwardKmerBitset = bitsetTuple._1 ++ broadcastedNuclMapForward.value(kmer.head).map(_ + bitPosition)
+          val reverseKmerBitset = bitsetTuple._2 ++ broadcastedNuclMapReverse.value(revKmer.head).map(_ + bitPosition)
           kmerToBitsetTuple(kmer.tail, revKmer.tail, (forwardKmerBitset, reverseKmerBitset))
         }
       }
 
       def extendsArrayOfKmersTuple(restOfStringSequence:String, arrayOfBinaryKmersTuple: Array[(BitSet, BitSet)]): Array[(BitSet, BitSet)] = {
         val lenOfRest = restOfStringSequence.length
-        val ksizeMinusOne = broadcastedKmerSize.value - 1
+        val bitPosition = (broadcastedKmerSize.value - 1) * 2
         if (lenOfRest == 0) {
           arrayOfBinaryKmersTuple
         }else {
@@ -103,21 +93,11 @@ object Dspark {
           // shift the forward kmer (remove 0 and 1, and subtract 2 of all value)
           val shiftedForward = arrayOfBinaryKmersTuple.last._1.-(0).-(1).map(_ - 2)
           // shift the reverse kmer (remove the last bit)
-          val shiftedReverse = arrayOfBinaryKmersTuple.last._2.-(ksizeMinusOne * 2).-(ksizeMinusOne * 2 + 1).map(_ + 2)
+          val shiftedReverse = arrayOfBinaryKmersTuple.last._2.-(bitPosition).-(bitPosition + 1).map(_ + 2)
           // insert the new nucl at the end of the forward strand
-          val newForward = head match {
-            case 'C' => shiftedForward + (ksizeMinusOne * 2 + 1)
-            case 'T' => shiftedForward + (ksizeMinusOne * 2)
-            case 'G' => shiftedForward + (ksizeMinusOne * 2) + (ksizeMinusOne * 2 + 1)
-            case _ => shiftedForward // A
-          }
-          // insert the compl nucl at the begining of the reverse strand
-          val newReverse = head match {
-            case 'G' => shiftedReverse + 1     // C
-            case 'A' => shiftedReverse + 0     // T
-            case 'C' => shiftedReverse + 0 + 1 // G
-            case _ => shiftedReverse           // A
-          }
+          val newForward = shiftedForward ++ broadcastedNuclMapForward.value(head).map(_ + bitPosition)
+          // insert the reverse nucl at the beginning of the reverse strand
+          val newReverse = shiftedReverse ++ broadcastedNuclMapReverse.value(head)
           extendsArrayOfKmersTuple(tail, arrayOfBinaryKmersTuple :+ (newForward, newReverse))
         }
       }
