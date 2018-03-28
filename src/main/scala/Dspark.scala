@@ -42,6 +42,7 @@ object Dspark {
 
     val nuclMapForward = Map('A' -> BitSet(), 'T' -> BitSet(0), 'G' -> BitSet(0, 1), 'C' -> BitSet(1))
     val nuclMapReverse = Map('T' -> BitSet(), 'A' -> BitSet(0), 'C' -> BitSet(0, 1), 'G' -> BitSet(1))
+    val boolTupleMap = Map((false, false) -> 'A', (true, false) -> 'T', (true, true) -> 'G', (false, true) -> 'C')
 
     //Broadcast variables on all nodes
     val broadcastedKmerSize = sc.broadcast(kmerSize)
@@ -50,6 +51,7 @@ object Dspark {
     val broadcastedAbundanceMin = sc.broadcast(abundanceMin)
     val broadcastedNuclMapForward = sc.broadcast(nuclMapForward)
     val broadcastedNuclMapReverse = sc.broadcast(nuclMapReverse)
+    val broadcastedBoolTupleMap = sc.broadcast(boolTupleMap)
 
     // main --------------------------
     val reads = inputType match {
@@ -120,33 +122,29 @@ object Dspark {
     }
 
     // Bitset Conversion   ----------------------------------------
-    def bitsetToKmer(binaryKmer: BitSet, kmer: String): String = {
-      val kmerLen = kmer.length
-      if (kmerLen == broadcastedKmerSize.value) {
-        kmer
+    def bitsetToBinaryString(bitset: BitSet): String = {
+      bitset.toBitMask.map(_.toChar).mkString
+    }
+
+    def binaryStringToBitset(binaryString: String): BitSet = {
+      BitSet.fromBitMask(binaryString.toCharArray.map(_.toLong))
+    }
+
+    def bitsetToAsciistring(bitset: BitSet, asciiString: String): String = {
+      val len = asciiString.length
+      if (len == broadcastedKmerSize.value) {
+        asciiString
       }else{
-        val index = kmerLen
-        val bitPosOne = binaryKmer.contains(index * 2)
-        val bitPosTwo = binaryKmer.contains(index * 2 + 1)
-
-        val bitTuple = (bitPosOne, bitPosTwo)
-
-        val newNucl = bitTuple match{
-          case (true, true) => 'G'
-          case (true, false) => 'T'
-          case (false, true) => 'C'
-          case _ => 'A'
-        }
-
-        val newBitset = binaryKmer - (index * 2) - (index * 2 + 1)
-        val extendedKmer = kmer + newNucl
-
-        bitsetToKmer(newBitset, extendedKmer)
+        val bitPosition = len * 2
+        val bitPositionPlusOne = bitPosition + 1
+        val newAsciiString = asciiString + broadcastedBoolTupleMap.value((bitset.contains(bitPosition), bitset.contains(bitPositionPlusOne)))
+        val newBitset = bitset - bitPosition - bitPositionPlusOne
+        bitsetToAsciistring(newBitset, newAsciiString)
       }
     }
 
-    def bitsetToBinaryString(bitset: BitSet): String = {
-      bitset.toBitMask.map(_.toChar).mkString
+    def binaryStringToAsciiString(binaryString: String): String = {
+      bitsetToAsciistring(binaryStringToBitset(binaryString), "")
     }
     // -------------------------------------------------------------------------
 
@@ -165,9 +163,9 @@ object Dspark {
       case "text" => {
         // sort ?
         if (sorted != 0){
-          filteredBinaryKmers.map(tpl => (bitsetToKmer(tpl._1, ""), tpl._2)).sortByKey()
+          filteredBinaryKmers.map(tpl => (bitsetToAsciistring(tpl._1, ""), tpl._2)).sortByKey()
         }else {
-          filteredBinaryKmers.map(tpl => (bitsetToKmer(tpl._1, ""), tpl._2))
+          filteredBinaryKmers.map(tpl => (bitsetToAsciistring(tpl._1, ""), tpl._2))
         }
       }
     }
