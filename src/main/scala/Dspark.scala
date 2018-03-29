@@ -72,7 +72,7 @@ object Dspark {
 
     // ascii or binary output
     val formatedOutput = format match {
-      case "binary" => filteredBinaryKmers.map(tpl => (broadcastedSequence.value.bitsetToBinaryString(tpl._1), tpl._2))
+      case "binary" => filteredBinaryKmers.map(tpl => (broadcastedSequence.value.bitsetToLong(tpl._1), tpl._2))
       case "text" => {
         // sort ?
         if (sorted != 0){

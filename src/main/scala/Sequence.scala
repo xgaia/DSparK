@@ -72,12 +72,23 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
   }
 
   // Bitset Conversion
-  def bitsetToBinaryString(bitset: BitSet): String = {
-    bitset.toBitMask.map(_.toChar).mkString
+  def asciiStringToBitset(asciiString: String, bitset: BitSet): BitSet = {
+  val kmerLen = asciiString.length
+    if (kmerLen == 0){
+      bitset
+    }else{
+      val bitPosition = (kmerSize - kmerLen) * 2
+      val newBitset = bitset ++ nuclMapForward(asciiString.head).map(_ + bitPosition)
+      asciiStringToBitset(asciiString.tail, newBitset)
+    }
   }
 
-  def binaryStringToBitset(binaryString: String): BitSet = {
-    BitSet.fromBitMask(binaryString.toCharArray.map(_.toLong))
+  def bitsetToLong(bitset: BitSet): Long = {
+    bitset.toBitMask(0)
+  }
+
+  def longToBitset(long: Long): BitSet = {
+    BitSet.fromBitMask(Array(long))
   }
 
   def bitsetToAsciistring(bitset: BitSet, asciiString: String): String = {
@@ -93,7 +104,7 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
     }
   }
 
-  def binaryStringToAsciiString(binaryString: String): String = {
-    bitsetToAsciistring(binaryStringToBitset(binaryString), "")
+  def longToAsciiString(long: Long): String = {
+    bitsetToAsciistring(longToBitset(long), "")
   }
 }
