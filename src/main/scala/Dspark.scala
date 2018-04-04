@@ -62,7 +62,7 @@ object Dspark {
     }
 
     // Convert reads to binary canonical kmers tuple => (BinaryCanonicalKmer, 1)
-    val binaryKmers = reads.mapPartitions(broadcastedSequence.value.readToBinaryKmersIterator)
+    val binaryKmers = reads.mapPartitions(broadcastedSequence.value.sequenceToLongCanonicalKmersIterator)
 
     // Count kmer
     val countedBinaryKmers = binaryKmers.reduceByKey(_ + _)
@@ -72,13 +72,12 @@ object Dspark {
 
     // ascii or binary output
     val formatedOutput = format match {
-      case "binary" => filteredBinaryKmers.map(tpl => (broadcastedSequence.value.bitsetToLong(tpl._1), tpl._2))
+      case "binary" => filteredBinaryKmers
       case "text" => {
-        // sort ?
         if (sorted != 0){
-          filteredBinaryKmers.map(tpl => (broadcastedSequence.value.bitsetToAsciistring(tpl._1, ""), tpl._2)).sortByKey()
+          filteredBinaryKmers.map(tpl => (broadcastedSequence.value.longToString(tpl._1), tpl._2)).sortByKey()
         }else {
-          filteredBinaryKmers.map(tpl => (broadcastedSequence.value.bitsetToAsciistring(tpl._1, ""), tpl._2))
+          filteredBinaryKmers.map(tpl => (broadcastedSequence.value.longToString(tpl._1), tpl._2))
         }
       }
     }

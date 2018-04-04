@@ -5,106 +5,79 @@ import scala.collection.immutable.BitSet
 
 class Sequence(kmerSize: Int) extends java.io.Serializable {
 
-  val nuclMapForward = Map('A' -> BitSet(), 'T' -> BitSet(0), 'G' -> BitSet(0, 1), 'C' -> BitSet(1))
-  val nuclMapReverse = Map('T' -> BitSet(), 'A' -> BitSet(0), 'C' -> BitSet(0, 1), 'G' -> BitSet(1))
-  val boolTupleMap = Map((false, false) -> 'A', (true, false) -> 'T', (true, true) -> 'G', (false, true) -> 'C')
+  val nuclMapReverseLong = Map('A' -> 2L, 'T' -> 0L, 'G' -> 1L, 'C' -> 3L)
+  val longToChar = List('A', 'C', 'T', 'G')
+  val kmerMask = (1L << kmerSize * 2) - 1
 
-  def readToBinaryKmersIterator(iterReads: Iterator[String]): Iterator[(BitSet, Int)] = {
-    iterReads.flatMap(sequenceToBinaryCanonicalKmers)
+  def sequenceToLongCanonicalKmersIterator(iterReads: Iterator[String]): Iterator[(Long, Int)] = {
+    iterReads.flatMap(sequenceToLongCanonicalKmers)
   }
 
-  def sequenceToBinaryCanonicalKmers(sequence: String): Array[(BitSet, Int)] = {
+  def sequenceToLongCanonicalKmers(sequence: String): Array[(Long, Int)] = {
     // Build the first kmer
     val firstStringKmer = sequence.take(kmerSize)
-    val firstBinaryKmerTuple = kmerToBitsetTuple(firstStringKmer, firstStringKmer.reverse, (BitSet(), BitSet()))
-    // Send the rest of the sequence to the extends fonction
+    val firstBinaryKmerTuple = kmerToLongTuple(firstStringKmer)
+    // Get the rest of the sequence
     val restOfSequence = sequence.takeRight(sequence.length - kmerSize)
-    val arrayOfKmersBinaryTuple = extendsArrayOfKmersTuple(restOfSequence, Array(firstBinaryKmerTuple))
+    // get all kmers with the rest of seq
+    val arrayOfKmersLongTuple = extendsArrayOfKmersLongTuple(restOfSequence, Array(firstBinaryKmerTuple))
     // return the canonical kmers
-    arrayOfKmersBinaryTuple.map(getCanonicalWithOne)
+    arrayOfKmersLongTuple.map(getCanonical)
   }
 
-  def kmerToBitsetTuple(kmer: String, revKmer: String, bitsetTuple: (BitSet, BitSet)): (BitSet, BitSet) = {
+  def nuclToLong(nucl: Char): Long = {
+    nucl >> 1 & 3
+  }
+
+  def kmerToLongTuple(kmer: String): (Long, Long) = {
+    kmerToLongTuple(kmer, kmer.reverse, (0L, 0L))
+  }
+
+  def kmerToLongTuple(kmer: String, revKmer: String, longTuple: (Long, Long)): (Long, Long) = {
     val kmerLen = kmer.length
     if (kmerLen == 0) {
-      bitsetTuple
-    }else{
-      val bitPosition = (kmerSize - kmerLen) * 2
-      val forwardKmerBitset = bitsetTuple._1 ++ nuclMapForward(kmer.head).map(_ + bitPosition)
-      val reverseKmerBitset = bitsetTuple._2 ++ nuclMapReverse(revKmer.head).map(_ + bitPosition)
-      kmerToBitsetTuple(kmer.tail, revKmer.tail, (forwardKmerBitset, reverseKmerBitset))
+      longTuple
+    } else {
+      val forwardLong = (longTuple._1 << 2) + nuclToLong(kmer.head)
+      val reverseLong = (longTuple._2 << 2) + nuclMapReverseLong(revKmer.head)
+      kmerToLongTuple(kmer.tail, revKmer.tail, (forwardLong, reverseLong))
     }
   }
 
-  def extendsArrayOfKmersTuple(restOfStringSequence:String, arrayOfBinaryKmersTuple: Array[(BitSet, BitSet)]): Array[(BitSet, BitSet)] = {
+  def extendsArrayOfKmersLongTuple(restOfStringSequence: String, arrayOfLongKmersTuple: Array[(Long, Long)]): Array[(Long, Long)] = {
     val lenOfRest = restOfStringSequence.length
-    val bitPosition = (kmerSize - 1) * 2
     if (lenOfRest == 0) {
-      arrayOfBinaryKmersTuple
-    }else {
-      val head = restOfStringSequence.head
-      val tail = restOfStringSequence.tail
-      // shift the forward kmer (remove 0 and 1, and subtract 2 of all value)
-      val shiftedForward = arrayOfBinaryKmersTuple.last._1.-(0).-(1).map(_ - 2)
-      // shift the reverse kmer (remove the last bit)
-      val shiftedReverse = arrayOfBinaryKmersTuple.last._2.-(bitPosition).-(bitPosition + 1).map(_ + 2)
-      // insert the new nucl at the end of the forward strand
-      val newForward = shiftedForward ++ nuclMapForward(head).map(_ + bitPosition)
-      // insert the reverse nucl at the beginning of the reverse strand
-      val newReverse = shiftedReverse ++ nuclMapReverse(head)
-      extendsArrayOfKmersTuple(tail, arrayOfBinaryKmersTuple :+ (newForward, newReverse))
+      arrayOfLongKmersTuple
+    } else {
+      val nucl = restOfStringSequence.head
+      // forward, add nucl at end of previousforward
+      val newForward = ((arrayOfLongKmersTuple.last._1 << 2) + nuclToLong(nucl)) & kmerMask
+      // reverse, add nucl at the begening of previous reverse
+      val newReverse = (arrayOfLongKmersTuple.last._2 >> 2) | (nuclMapReverseLong(nucl) << (2 * (kmerSize - 1)))
+      extendsArrayOfKmersLongTuple(restOfStringSequence.tail, arrayOfLongKmersTuple :+ (newForward, newReverse))
     }
   }
 
-  //FIXME: Improve this method
-  def getCanonicalWithOne(bitsetTuple: (BitSet, BitSet)): (BitSet, Int) = {
-    (bitsetTuple._1.isEmpty, bitsetTuple._2.isEmpty) match {
-      case (false, false) => {
-        if ((bitsetTuple._1 &~ bitsetTuple._2).min > (bitsetTuple._2 &~ bitsetTuple._1).min) {
-          (bitsetTuple._1, 1)
-        }else{
-          (bitsetTuple._2, 1)
-        }
-      }
-      case (true, false) => (bitsetTuple._1, 1)
-      case _ => (bitsetTuple._2, 1)
+  def getCanonical(longTuple: (Long, Long)): (Long, Int) = {
+    (List(longTuple._1, longTuple._2).min, 1)
+  }
+
+  // Kmer Conversion Conversion
+  def longToString(long: Long): String = {
+    longToString(long, "")
+  }
+
+  def longToString(long: Long, string: String): String = {
+    if (string.length == kmerSize) {
+      string
+    } else {
+      //last nucl
+      val lastNucl = longToChar((long & 3).toInt)
+      // extends the string
+      val kmer = lastNucl + string
+      // remove the nucl from the long
+      val tail = long >> 2
+      longToString(tail, kmer)
     }
-  }
-
-  // Bitset Conversion
-  def asciiStringToBitset(asciiString: String, bitset: BitSet): BitSet = {
-  val kmerLen = asciiString.length
-    if (kmerLen == 0){
-      bitset
-    }else{
-      val bitPosition = (kmerSize - kmerLen) * 2
-      val newBitset = bitset ++ nuclMapForward(asciiString.head).map(_ + bitPosition)
-      asciiStringToBitset(asciiString.tail, newBitset)
-    }
-  }
-
-  def bitsetToLong(bitset: BitSet): Long = {
-    bitset.toBitMask(0)
-  }
-
-  def longToBitset(long: Long): BitSet = {
-    BitSet.fromBitMask(Array(long))
-  }
-
-  def bitsetToAsciistring(bitset: BitSet, asciiString: String): String = {
-    val len = asciiString.length
-    if (len == kmerSize) {
-      asciiString
-    }else{
-      val bitPosition = len * 2
-      val bitPositionPlusOne = bitPosition + 1
-      val newAsciiString = asciiString + boolTupleMap((bitset.contains(bitPosition), bitset.contains(bitPositionPlusOne)))
-      val newBitset = bitset - bitPosition - bitPositionPlusOne
-      bitsetToAsciistring(newBitset, newAsciiString)
-    }
-  }
-
-  def longToAsciiString(long: Long): String = {
-    bitsetToAsciistring(longToBitset(long), "")
   }
 }
