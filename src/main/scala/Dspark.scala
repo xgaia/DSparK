@@ -30,6 +30,8 @@ object Dspark {
 
     parser.assertAllowedValue("input-type", Array("fasta", "fastq"))
     parser.assertAllowedValue("format", Array("binary", "text"))
+    parser.assertMax("kmer-size", 31)
+    parser.assertCondition("kmer-size",  _ % 2 != 0)
     // TODO: assertion (don't work well in Spark, filesystem are different)
     //parser.assertPathIsFile("input")
 
