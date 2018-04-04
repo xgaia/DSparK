@@ -1,13 +1,10 @@
 package sequence
 
-import scala.collection.immutable.BitSet
-
-
 class Sequence(kmerSize: Int) extends java.io.Serializable {
 
   val nuclMapReverseLong = Map('A' -> 2L, 'T' -> 0L, 'G' -> 1L, 'C' -> 3L)
   val longToChar = List('A', 'C', 'T', 'G')
-  val kmerMask = (1L << kmerSize * 2) - 1
+  private val kmerMask = (1L << kmerSize * 2) - 1
 
   def sequenceToLongCanonicalKmersIterator(iterReads: Iterator[String]): Iterator[(Long, Int)] = {
     iterReads.flatMap(sequenceToLongCanonicalKmers)
@@ -34,8 +31,7 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
   }
 
   def kmerToLongTuple(kmer: String, revKmer: String, longTuple: (Long, Long)): (Long, Long) = {
-    val kmerLen = kmer.length
-    if (kmerLen == 0) {
+    if (kmer.length == 0) {
       longTuple
     } else {
       val forwardLong = (longTuple._1 << 2) + nuclToLong(kmer.head)
@@ -45,8 +41,7 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
   }
 
   def extendsArrayOfKmersLongTuple(restOfStringSequence: String, arrayOfLongKmersTuple: Array[(Long, Long)]): Array[(Long, Long)] = {
-    val lenOfRest = restOfStringSequence.length
-    if (lenOfRest == 0) {
+    if (restOfStringSequence.length == 0) {
       arrayOfLongKmersTuple
     } else {
       val nucl = restOfStringSequence.head
@@ -71,7 +66,7 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
     if (string.length == kmerSize) {
       string
     } else {
-      //last nucl
+      // last nucl
       val lastNucl = longToChar((long & 3).toInt)
       // extends the string
       val kmer = lastNucl + string
