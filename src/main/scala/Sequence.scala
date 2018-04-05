@@ -11,15 +11,23 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
   }
 
   def sequenceToLongCanonicalKmers(sequence: String): Array[(Long, Int)] = {
-    // Build the first kmer
-    val firstStringKmer = sequence.take(kmerSize)
-    val firstBinaryKmerTuple = kmerToLongTuple(firstStringKmer)
-    // Get the rest of the sequence
-    val restOfSequence = sequence.takeRight(sequence.length - kmerSize)
-    // get all kmers with the rest of seq
-    val arrayOfKmersLongTuple = extendsArrayOfKmersLongTuple(restOfSequence, Array(firstBinaryKmerTuple))
-    // return the canonical kmers
-    arrayOfKmersLongTuple.map(getCanonical)
+    // remove all head N
+    val trimedSequence = removeHeadN(sequence)
+    val sizeOfTrimedSequence = trimedSequence.length
+    // if sequence is empty (only N), return an empty array
+    if (sizeOfTrimedSequence < kmerSize){
+      Array()
+    }else {
+      // Build the first kmer
+      val firstStringKmer = trimedSequence.take(kmerSize)
+      val firstBinaryKmerTuple = kmerToLongTuple(firstStringKmer)
+      // Get the rest of the sequence
+      val restOfSequence = trimedSequence.takeRight(sizeOfTrimedSequence - kmerSize)
+      // get all kmers with the rest of seq
+      val arrayOfKmersLongTuple = extendsArrayOfKmersLongTuple(restOfSequence, Array(firstBinaryKmerTuple))
+      // return the canonical kmers
+      arrayOfKmersLongTuple.map(getCanonical)
+    }
   }
 
   def nuclToLong(nucl: Char): Long = {
@@ -55,6 +63,20 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
 
   def getCanonical(longTuple: (Long, Long)): (Long, Int) = {
     (List(longTuple._1, longTuple._2).min, 1)
+  }
+
+  def removeHeadN(sequence: String): String = {
+    if (sequence.isEmpty) {
+      ""
+    }else{
+      val head = sequence.head
+      val tail = sequence.tail
+      if (head != 'N'){
+        sequence
+      }else{
+        removeHeadN(tail)
+      }
+    }
   }
 
   // Kmer Conversion Conversion
