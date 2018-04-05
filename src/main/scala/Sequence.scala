@@ -53,18 +53,36 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
       arrayOfLongKmersTuple
     } else {
       val nucl = restOfStringSequence.head
-      // forward, add nucl at end of previousforward
-      val newForward = ((arrayOfLongKmersTuple.last._1 << 2) + nuclToLong(nucl)) & kmerMask
-      // reverse, add nucl at the begening of previous reverse
-      val newReverse = (arrayOfLongKmersTuple.last._2 >> 2) | (nuclMapReverseLong(nucl) << (2 * (kmerSize - 1)))
-      extendsArrayOfKmersLongTuple(restOfStringSequence.tail, arrayOfLongKmersTuple :+ (newForward, newReverse))
+      // if nucl is N
+      if (nucl == 'N') {
+        // trim rest of seq
+        val newSeq = trimIfN(restOfStringSequence.tail)
+        // if empty, return the array
+        if (newSeq.isEmpty){
+          arrayOfLongKmersTuple
+        }else{
+          // build a new kmer
+          val newFirstStringKmer = newSeq.take(kmerSize)
+          val newFirstBinaryKmerTuple = kmerToLongTuple(newFirstStringKmer)
+          // Get the rest of the sequence
+          val newRestOfSequence = newSeq.takeRight(newSeq.length - kmerSize)
+          // get all kmers with the rest of seq
+          extendsArrayOfKmersLongTuple(newRestOfSequence, arrayOfLongKmersTuple :+ newFirstBinaryKmerTuple)
+        }
+      }else {
+        // forward, add nucl at end of previousforward
+        val newForward = ((arrayOfLongKmersTuple.last._1 << 2) + nuclToLong(nucl)) & kmerMask
+        // reverse, add nucl at the begening of previous reverse
+        val newReverse = (arrayOfLongKmersTuple.last._2 >> 2) | (nuclMapReverseLong(nucl) << (2 * (kmerSize - 1)))
+        extendsArrayOfKmersLongTuple(restOfStringSequence.tail, arrayOfLongKmersTuple :+ (newForward, newReverse))
+      }
     }
   }
 
   def getCanonical(longTuple: (Long, Long)): (Long, Int) = {
     (List(longTuple._1, longTuple._2).min, 1)
   }
-  
+
   def trimIfN(sequence: String): String = {
     val indexOfFirstN = sequence.indexOf('N')
     if (indexOfFirstN < kmerSize - 1 && indexOfFirstN >= 0) {
@@ -74,7 +92,7 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
     }
   }
 
-  // Kmer Conversion Conversion
+  // Kmer Conversion
   def longToString(long: Long): String = {
     longToString(long, "")
   }
