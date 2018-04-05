@@ -11,10 +11,10 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
   }
 
   def sequenceToLongCanonicalKmers(sequence: String): Array[(Long, Int)] = {
-    // remove all head N
-    val trimedSequence = removeHeadN(sequence)
+    // remove all N head, + remove head if contain a N at pos ksize
+    val trimedSequence = trimIfN(sequence)
     val sizeOfTrimedSequence = trimedSequence.length
-    // if sequence is empty (only N), return an empty array
+    // if trimed sequence is smaller than ksize, don't return kmers
     if (sizeOfTrimedSequence < kmerSize){
       Array()
     }else {
@@ -64,18 +64,13 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
   def getCanonical(longTuple: (Long, Long)): (Long, Int) = {
     (List(longTuple._1, longTuple._2).min, 1)
   }
-
-  def removeHeadN(sequence: String): String = {
-    if (sequence.isEmpty) {
-      ""
+  
+  def trimIfN(sequence: String): String = {
+    val indexOfFirstN = sequence.indexOf('N')
+    if (indexOfFirstN < kmerSize - 1 && indexOfFirstN >= 0) {
+      trimIfN(sequence.takeRight(sequence.length - indexOfFirstN - 1))
     }else{
-      val head = sequence.head
-      val tail = sequence.tail
-      if (head != 'N'){
-        sequence
-      }else{
-        removeHeadN(tail)
-      }
+      sequence
     }
   }
 
