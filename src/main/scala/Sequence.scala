@@ -85,7 +85,7 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
 
   def trimIfN(sequence: String): String = {
     val indexOfFirstN = sequence.indexOf('N')
-    if (indexOfFirstN < kmerSize - 1 && indexOfFirstN >= 0) {
+    if (indexOfFirstN < kmerSize && indexOfFirstN >= 0) {
       trimIfN(sequence.takeRight(sequence.length - indexOfFirstN - 1))
     }else{
       sequence
