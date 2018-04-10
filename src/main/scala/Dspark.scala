@@ -1,12 +1,11 @@
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.udf
 import org.apache.spark.mllib.rdd.RDDFunctions._
-//import scala.util.{Failure, Success, Try}
 import fr.inra.lipm.general.paramparser.ArgParser
 
 import sequence.Sequence
-
-
 
 object Dspark {
   def main(args: Array[String]) = {
@@ -14,6 +13,13 @@ object Dspark {
     // Spark configuration
     val conf = new SparkConf().setAppName("DSparK")
     val sc = new SparkContext(conf)
+
+    val spark = SparkSession
+      .builder()
+      .appName("DSparK")
+      .getOrCreate()
+
+    import spark.implicits._
 
     // Param parser
     val parser = new ArgParser()
@@ -63,28 +69,28 @@ object Dspark {
       case "fastq" => sc.textFile(input).sliding(4, 4).map{case Array(id, seq, _, qual) => seq}
     }
 
-    // Convert reads to binary canonical kmers tuple => (BinaryCanonicalKmer, 1)
-    val binaryKmers = reads.mapPartitions(broadcastedSequence.value.sequenceToLongCanonicalKmersIterator)
+    // get a dataFrame of kmer
+    val binaryKmersDataFrame = reads.mapPartitions(broadcastedSequence.value.sequenceToLongCanonicalKmersIterator).toDF("kmer")
 
-    // Count kmer
-    val countedBinaryKmers = binaryKmers.reduceByKey(_ + _)
+    // count kmers
+    val result = binaryKmersDataFrame.groupBy("kmer").count.filter($"count" >= abundanceMin).filter($"count" <= abundanceMax)
 
-    // filter on abundance
-    val filteredBinaryKmers = countedBinaryKmers.filter(kmer_tpl => kmer_tpl._2 >= broadcastedAbundanceMin.value && kmer_tpl._2 <= broadcastedAbundanceMax.value)
+    // Format and sort if needed
+    def longToString:(Long => String) = {long => sequence.longToString(long)}
+    val longToStringUDF = udf(longToString)
 
-    // ascii or binary output
-    val formatedOutput = format match {
-      case "binary" => filteredBinaryKmers
+    val formatedResults = format match {
+      case "binary" => result
       case "text" => {
-        if (sorted != 0){
-          filteredBinaryKmers.map(tpl => (broadcastedSequence.value.longToString(tpl._1), tpl._2)).sortByKey()
-        }else {
-          filteredBinaryKmers.map(tpl => (broadcastedSequence.value.longToString(tpl._1), tpl._2))
+        if (sorted != 0) {
+          result.withColumn("string kmer", longToStringUDF(result("kmer"))).select("string kmer", "count").sort("string kmer")
+        }else{
+          result.withColumn("string kmer", longToStringUDF(result("kmer"))).select("string kmer", "count")
         }
       }
     }
 
-    // Save results
-    formatedOutput.saveAsTextFile(output)
+    // output as CSV
+    formatedResults.write.format("csv").save(output)
   }
 }

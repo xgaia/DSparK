@@ -6,11 +6,11 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
   val longToChar = List('A', 'C', 'T', 'G')
   private val kmerMask = (1L << kmerSize * 2) - 1
 
-  def sequenceToLongCanonicalKmersIterator(iterReads: Iterator[String]): Iterator[(Long, Int)] = {
+  def sequenceToLongCanonicalKmersIterator(iterReads: Iterator[String]): Iterator[Long] = {
     iterReads.flatMap(sequenceToLongCanonicalKmers)
   }
 
-  def sequenceToLongCanonicalKmers(sequence: String): Array[(Long, Int)] = {
+  def sequenceToLongCanonicalKmers(sequence: String): Array[Long] = {
     // remove all N head, + remove head if contain a N at pos ksize
     val trimedSequence = trimIfN(sequence)
     val sizeOfTrimedSequence = trimedSequence.length
@@ -79,8 +79,8 @@ class Sequence(kmerSize: Int) extends java.io.Serializable {
     }
   }
 
-  def getCanonical(longTuple: (Long, Long)): (Long, Int) = {
-    (List(longTuple._1, longTuple._2).min, 1)
+  def getCanonical(longTuple: (Long, Long)): Long = {
+    List(longTuple._1, longTuple._2).min
   }
 
   def trimIfN(sequence: String): String = {
