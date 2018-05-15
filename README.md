@@ -7,7 +7,7 @@ DSparK is a Spark implementation of [DSK](https://github.com/gatb/dsk), a kmer c
 Clone the repository and cd into it
 
 ```bash
-git clone https://lipm-gitlab.toulouse.inra.fr/spark-ics/DSparK.git
+git clone https://github.com/xgaia/DSparK.git
 cd DSparK
 ```
 
